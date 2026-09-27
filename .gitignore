@@ -1,0 +1,24 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+*.local
+*.tsbuildinfo
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.swp
+
+# python
+__pycache__/
+*.pyc
+
+# 插件运行时产物（由 tools/prepare_python.py / 前端推理生成）
+python-3.10/
+runtime/out/
+
+# 打包产物与重复归档
+*.zip

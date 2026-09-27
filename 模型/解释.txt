@@ -1,0 +1,18 @@
+1.
+运行./data/features.py，进行特征提取
+
+2.
+./dataset/data_load.py 是数据加载,train,val和test
+
+3.
+./utils/utils.py 整个框架用到的自定义类型
+./utils/special.py 使用三个函数进一步处理键长，键角和扭转角的
+
+4.
+./layer/geom.py局部和非局部的特征学习过程
+
+5.
+./model/mix.py 是主程序
+
+6.直接运行fea_den.py 进行训练
+
