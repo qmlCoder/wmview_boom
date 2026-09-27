@@ -47,11 +47,16 @@ import features as F  # noqa: E402
 import grmp_numpy as G  # noqa: E402
 import perf as P  # noqa: E402
 
-# 训练集覆盖域（来自 模型/data/final_123679.csv 的统计，见 README）
+# 训练集覆盖域：下面是 模型/data/final_123679.csv（123679 条）的实测统计，
+# 含「每个元素各自的出现范围」和「哪些元素是所有训练分子都有的」。
+# 注意 C/N/O：训练集里 100% 的分子都含 C、N、O 各至少 1 个（没有 N-free / O-free 的样本），
+# H 有 8 条样本为 0；重原子数只有 8/9/10。
 DOMAIN = {
-    'C': (1, 7), 'H': (1, 8), 'N': (1, 5), 'O': (1, 4),
-    'atoms': (2, 17), 'rho': (1.2, 2.0),
+    'C': (1, 7), 'H': (0, 8), 'N': (1, 5), 'O': (1, 4),
+    'heavy': (8, 10), 'atoms': (8, 17), 'rho': (1.2167, 1.9570),
 }
+ALWAYS_PRESENT = ('C', 'N', 'O')   # 训练集里每个分子都含这些元素
+ELEMENTS = ('C', 'H', 'N', 'O')
 
 
 def write_result(out_path: Path, payload: dict):
@@ -64,20 +69,30 @@ def domain_warnings(syms, counts, rho=None):
     other = [s for s in counts if s not in ('C', 'H', 'N', 'O')]
     if other:
         warns.append(f'含非 CHNO 元素 {sorted(set(other))}：远超训练集覆盖域，结果不可信')
-    for el, (lo, hi) in DOMAIN.items():
-        if el in ('atoms', 'rho'):
-            continue
-        v = counts.get(el, 0)
-        if not (lo <= v <= hi):
-            warns.append(f'{el} 原子数 {v} 超出训练集范围 [{lo},{hi}]')
+    # 1) 训练集里必有的元素缺失（N/O 缺失 = 完全没见过的分子类型）
+    absent = [el for el in ALWAYS_PRESENT if counts.get(el, 0) == 0]
+    if absent:
+        warns.append(f"本分子不含 {'/'.join(absent)}，而训练集里所有分子都含 C/N/O"
+                     f"（没有 N-free / O-free 的样本）→ 属外推")
+    # 2) 各元素原子数上限
+    over = [f'{el}={counts[el]}（训练集上限 {DOMAIN[el][1]}）'
+            for el in ELEMENTS if counts.get(el, 0) > DOMAIN[el][1]]
+    if over:
+        warns.append('原子数超出训练集范围：' + '，'.join(over))
+    # 3) 重原子数（模型真正“见过”的分子规模）
+    n_heavy = sum(counts.get(el, 0) for el in ELEMENTS if el != 'H')
+    lo, hi = DOMAIN['heavy']
+    if not (lo <= n_heavy <= hi):
+        warns.append(f'重原子数 {n_heavy} 超出训练集范围 [{lo},{hi}]'
+                     f'（训练集只有 8~10 个重原子的小分子）')
     n_atoms = len(syms)
     lo, hi = DOMAIN['atoms']
     if not (lo <= n_atoms <= hi):
-        warns.append(f'原子总数 {n_atoms} 超出训练集范围 [{lo},{hi}]')
+        warns.append(f'原子总数 {n_atoms} 超出训练集范围 [{lo},{hi}]（训练集 8~17 个原子）')
     if rho is not None:
         lo, hi = DOMAIN['rho']
         if not (lo <= rho <= hi):
-            warns.append(f'预测密度 {rho:.3f} 超出训练集范围 [{lo},{hi}]，属外推')
+            warns.append(f'预测密度 {rho:.3f} 超出训练集实测范围 [{lo},{hi}]，属外推、不要采信')
     return warns
 
 

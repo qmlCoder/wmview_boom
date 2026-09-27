@@ -14,3 +14,7 @@
 - 新增: pack.py 打包（dist + runtime + python-3.10 + info.json + icon.png），产出 wmview.boom.zip（约 50MB）
 - 精简: prepare_python.py 拷贝内置 python 后删除 pip/setuptools/wheel/get-pip/Scripts，包体积 55.7MB → 50.7MB
 - 待办: 上架前补 github 地址、传 icon.png 到 OSS、在 plugins/update.py 里登记（update.py 依赖 info.json 自动发现插件）
+- 修复: 覆盖域警告文案与判据 —— 原来把「本分子不含 N/O」写成"N 原子数 0 超出训练集范围 [1,5]"，
+  容易被当成误报；改为按数据集实测事实说明：训练集 100% 分子都含 C/N/O（无 N-free / O-free 样本）、
+  重原子数只有 8~10、密度实测范围 [1.2167,1.957]；H 的范围修正为 [0,8]（有 8 条 H=0 的样本），
+  并新增重原子数检查（C2H4/N2/CO2 这类小分子会明确提示"超出模型见过的分子规模"）
