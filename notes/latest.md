@@ -49,3 +49,9 @@
   8/8 分子与原生 CLI 一致（ρ 差 ≤3.2e-8、ΔHf 差 0、p 差 ≤9.7e-7）；U/Cr 等不支持元素干净返回 ok:false
 - 发布: 包体积 **48.4 MB → 27.9 MB**（−42%），版本 0.1.0 → 0.2.0
 - 待办: 上架前补 github 地址、传 icon.png 到 OSS（update.py 依赖 info.json 自动发现插件）
+
+- 发布: 仓库上传 GitHub → https://github.com/qmlCoder/wmview_boom（public）
+  大二进制（模型/model_save/*.pt、runtime/weights/*.npz、boom-data/*.bin）不进版本库，
+  并重写前 2 次提交把它们从历史里清掉：.git 58.6 MB → 4.24 MB（同级 wmvie.flavor 也是这个约定）；
+  克隆后需自备权重，跑 tools/export_weights.py（要 torch）→ tools/export_flat_weights.py 再构建
+- 修复: info.json 的 github 字段补上仓库地址（市场列表要用）
