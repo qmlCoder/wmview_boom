@@ -86,6 +86,12 @@ npz 是 zip 容器，wasm 里解压不划算，扁平格式一次 fetch 就能�
 
 ## 3. 快速上手
 
+> **新克隆的仓库要先补权重**：按同级插件的约定（见 `../wmvie.flavor`），大二进制不进版本库 ——
+> `模型/model_save/*.pt`、`runtime/weights/*.npz`、`boom-data/*.bin` 都不在仓库里。
+> 补法：把两个 checkpoint 放到 `模型/model_save/`，然后
+> `python tools/export_weights.py`（需要 torch）→ `python tools/export_flat_weights.py`（只需要 numpy）。
+> 缺了 `boom-data/*.bin` 时 `npm run build` 会在 vite 阶段报找不到资源。
+
 ```bash
 # 前端联调（宿主 dev 模式连 localhost:3001；也可直接装到宿主 plugs/ 下）
 npm install
