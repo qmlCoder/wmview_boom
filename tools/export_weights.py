@@ -27,7 +27,14 @@ TARGETS = {
 
 
 def model_dir() -> Path:
-    return MODEL_DIR if MODEL_DIR.exists() else MODEL_DIR_ALT
+    """checkpoint 目录：老快照用中文名 `模型/`，克隆仓库后可能只有 `model/`。
+
+    新克隆的仓库里 `模型/model_save/` **不存在**（该目录只装被 gitignore 的 .pt），
+    所以这里按需新建，避免下一步 open() 抛 FileNotFoundError。
+    """
+    d = MODEL_DIR if MODEL_DIR.exists() else MODEL_DIR_ALT
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def load_ckpt(path: Path):
@@ -39,6 +46,14 @@ def load_ckpt(path: Path):
 
 def main():
     src = model_dir()
+    missing = [info["file"] for info in TARGETS.values() if not (src / info["file"]).is_file()]
+    if missing:
+        raise SystemExit(
+            "缺 checkpoint：" + "、".join(missing) + "\n"
+            f"请把 best_density.pt / best_eof.pt 放进 {src} 再跑本脚本。\n"
+            "（仓库按同级插件的约定不提交大二进制：*.pt / *.npz / boom-data/*.bin 都在 .gitignore 里，"
+            "新克隆下来没有这两个文件。）"
+        )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     metas = {}
     key_sets = {}
