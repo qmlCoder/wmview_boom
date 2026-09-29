@@ -16,8 +16,11 @@ import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parent.parent
-MODEL_DIR = ROOT / "模型" / "model_save"
-MODEL_DIR_ALT = ROOT / "model" / "model_save"
+# 原项目快照目录是中文名 `模型/`；若某天被重命名成 ASCII 的 `model/` 也能用。
+# 注意判断的是**父目录**是否存在，不是 `model_save/`——新克隆的仓库里
+# `模型/` 有、`模型/model_save/` 没有（该目录只装被 gitignore 的 .pt，git 不保留空目录）。
+MODEL_BASE = ROOT / "模型"
+MODEL_BASE_ALT = ROOT / "model"
 OUT_DIR = ROOT / "runtime" / "weights"
 
 TARGETS = {
@@ -27,12 +30,13 @@ TARGETS = {
 
 
 def model_dir() -> Path:
-    """checkpoint 目录：老快照用中文名 `模型/`，克隆仓库后可能只有 `model/`。
+    """checkpoint 目录：优先用中文名 `模型/model_save/`，没有 `模型/` 时退回 `model/model_save/`。
 
     新克隆的仓库里 `模型/model_save/` **不存在**（该目录只装被 gitignore 的 .pt），
     所以这里按需新建，避免下一步 open() 抛 FileNotFoundError。
     """
-    d = MODEL_DIR if MODEL_DIR.exists() else MODEL_DIR_ALT
+    base = MODEL_BASE if MODEL_BASE.exists() else MODEL_BASE_ALT
+    d = base / "model_save"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
