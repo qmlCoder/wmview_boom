@@ -29,6 +29,11 @@ table.res td.warn {
   white-space: normal;
 }
 
+table.res td.alt {
+  color: #1971c2;
+  white-space: normal;
+}
+
 div.log {
   background-color: #1e1e1e;
   color: #d4d4d4;
@@ -77,13 +82,28 @@ div.log {
     <panel-item title="生成焓 ΔHf">
       <el-switch v-model="refs.useEof"></el-switch>
     </panel-item>
-    <panel-item title="估算 Q / D / p" tip="经验拟合关系（不是模型输出）：Q 误差约 1%，D/p 约 4~5%">
+    <panel-item title="估算 Q / D / p" tip="经验拟合关系（不是模型输出）：Q 误差约 1%，D/p 约 2~5%">
       <el-switch v-model="refs.derived"></el-switch>
+    </panel-item>
+    <panel-item title="Q/D/p 口径" tip="linear14：现行 14 特征线性回归；kamlet：D/p 换成无 CO 氧平衡 + Kamlet 对数形式（留出集 D 4.19%→2.31%、p 5.35%→4.62%）。两套同时给出，另一套显示在结果下方">
+      <el-select v-model="refs.perfVariant" style="width: 100%">
+        <el-option label="linear14（现行）" value="linear14"></el-option>
+        <el-option label="kamlet（候选）" value="kamlet_noco"></el-option>
+      </el-select>
+    </panel-item>
+  </panel-group>
+
+  <panel-group title="推理核">
+    <panel-item title="状态">
+      <span style="font-size: smaller">{{ refs.engine }}</span>
+    </panel-item>
+    <panel-item title="负荷" tip="首次预测要把 wasm 与 29 MB 权重读进内存；之后每个分子只需几十毫秒">
+      <span style="font-size: smaller">{{ refs.engineDetail }}</span>
     </panel-item>
   </panel-group>
 
   <div :class="$style.rowBtns">
-    <el-button :icon="Refresh" :loading="refs.checking" @click="check_env">检查环境</el-button>
+    <el-button :icon="Refresh" :loading="refs.checking" @click="check_env">加载推理核</el-button>
     <el-button type="primary" :icon="VideoPlay" :loading="refs.busy" @click="run">开始预测</el-button>
   </div>
 
@@ -101,8 +121,8 @@ div.log {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(r, k) in refs.results" :key="k">
-          <template v-if="r.ok">
+        <template v-for="(r, k) in refs.results" :key="k">
+          <tr v-if="r.ok">
             <td>{{ r.name }}</td>
             <td>{{ r.formula }}</td>
             <td>{{ fmt(r.results.density, 4) }}</td>
@@ -110,17 +130,22 @@ div.log {
             <td>{{ fmt(r.derived?.Q, 1) }}</td>
             <td>{{ fmt(r.derived?.D, 3) }}</td>
             <td>{{ fmt(r.derived?.p, 2) }}</td>
-          </template>
-          <template v-else>
+          </tr>
+          <tr v-else>
             <td>{{ r.name }}</td>
             <td :class="$style.warn" colspan="6">{{ r.error }}</td>
-          </template>
-        </tr>
-        <tr v-for="(r, k) in refs.results" :key="'w' + k">
-          <td :class="$style.warn" colspan="7" v-if="r.warnings?.length">
-            {{ r.name }}：{{ r.warnings.join('；') }}
-          </td>
-        </tr>
+          </tr>
+          <tr v-if="r.ok && r.warnings?.length">
+            <td :class="$style.warn" colspan="7">{{ r.name }}：{{ r.warnings.join('；') }}</td>
+          </tr>
+          <tr v-if="r.ok && r.derived_alt">
+            <td :class="$style.alt" colspan="7">
+              {{ r.name }}：另一套口径（{{ altName(r.perf_variant) }}）Q =
+              {{ fmt(r.derived_alt.Q, 1) }} cal/g，D = {{ fmt(r.derived_alt.D, 3) }} km/s，p =
+              {{ fmt(r.derived_alt.p, 2) }} GPa
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
   </div>
@@ -134,17 +159,14 @@ import { ElButton, ElSelect, ElOption, ElSwitch } from 'element-plus'
 import { Refresh, VideoPlay } from '@element-plus/icons-vue'
 import PanelGroup from '@/comps/Panel-Group.vue'
 import PanelItem from '@/comps/Panel-Item.vue'
-import type { BoomResult, wmapi_boom } from './plugin-api'
+import type { BoomPerfVariant, BoomPredictOptions, BoomResult, wmapi_boom } from './plugin-api'
+import { boomRuntime, loadBoomRuntime } from './boom/runtime'
 
 const cores = window.wmapi_cores
 const files = window.wmapi_files
 const wmscene = window.wmapi_scene
 
-// 宿主 run_exe 的日志前缀
-const SOURCE = 'plugin_boom'
-// 开发时插件跑在源码目录（内置 python 就在这），发布时跑在宿主 plugs 下的安装目录
-const DEV_FOLD = 'E:/code/wmview/plugins/wmview.boom'
-
+const DEVICE_FOLD = 'windows / android'
 const refs = ref({
   moleName: '',
   source: 'select' as 'select' | 'all',
@@ -153,30 +175,18 @@ const refs = ref({
   useDensity: true,
   useEof: true,
   derived: true,
+  perfVariant: 'linear14' as BoomPerfVariant,
   busy: false,
   checking: false,
+  engine: '未加载',
+  engineDetail: DEVICE_FOLD,
   log: '',
   results: [] as BoomResult[],
 })
 
-const fmt = (v: number | undefined, n: number) => (v == null ? '—' : v.toFixed(n))
-
-/** 插件目录：dev 用本地源码目录，发布用宿主 plugs 下的安装目录 */
-let foldP: Promise<string> | undefined
-const plugin_fold = () => {
-  if (!foldP) {
-    foldP = (async () => {
-      if (import.meta.env.DEV) return DEV_FOLD
-      await files.wait_root()
-      return `${files.get_plugFold()}/wmview.boom`
-    })()
-  }
-  return foldP
-}
-
-const py_exe = (fold: string) => `${fold}/python-3.10/pythonw.exe`
-const infer_script = (fold: string) => `${fold}/runtime/boom_infer.py`
-const result_file = (fold: string) => `${fold}/runtime/out/result.json`
+const fmt = (v: number | undefined | null, n: number) => (v == null ? '—' : v.toFixed(n))
+const altName = (v: BoomPerfVariant | undefined) =>
+  v === 'linear14' ? 'kamlet' : 'linear14'
 
 const targets = (): ('density' | 'eof')[] => {
   const out: ('density' | 'eof')[] = []
@@ -201,55 +211,89 @@ const pick_moles = (): string[] => {
   return cur ? [cur] : []
 }
 
-/** 跑一次推理：把分子喂给 runtime/boom_infer.py，读回 runtime/out/result.json */
-const predict_one = async (name: string, fold: string, tgts: ('density' | 'eof')[]): Promise<BoomResult> => {
+/** 确保推理核已加载（幂等），返回自检信息 */
+const ensure_engine = async () => {
+  const rt = await loadBoomRuntime((msg) => {
+    refs.value.log = msg
+  })
+  const i = rt.info
+  refs.value.engine = `就绪（${i.hidden} 隐层 × ${i.pass_layers} 层，${(
+    (i.params_per_model ?? 0) / 1e6
+  ).toFixed(2)} M 参数/模型）`
+  refs.value.engineDetail =
+    `${DEVICE_FOLD}｜wasm ${(rt.sizes.wasm / 1024).toFixed(0)} KB + 权重 ` +
+    `${(rt.sizes.weights / 1e6).toFixed(1)} MB｜首次加载 ${rt.loadMs.toFixed(0)} ms`
+  refs.value.log =
+    `推理核：Rust→wasm（进程内，无外部程序）\n` +
+    `密度模型：epoch ${i.density?.epoch}，val MAE ${i.density?.val_mae?.toFixed(4)}\n` +
+    `生成焓模型：epoch ${i.eof?.epoch}，val MAE ${i.eof?.val_mae?.toFixed(4)}\n` +
+    `加载耗时 ${rt.loadMs.toFixed(0)} ms`
+  return rt
+}
+
+/** 面板上的推理选项（全部有值，供 predict 直接使用） */
+interface PredictOptions {
+  targets: ('density' | 'eof')[]
+  bond_mode: 'auto' | 'host' | 'distance'
+  index_mode: 'legacy' | 'corrected'
+  derived: boolean
+  perf_variant: BoomPerfVariant
+}
+
+/** 跑一次推理：全在进程内（wasm），不再起 python 进程、不再读写结果文件。
+ *
+ * 模型层面的失败（元素不支持、坐标不匹配等）以 `ok:false` 的结果返回，
+ * 由调用方决定怎么展示；只有「拿不到分子结构 / 推理核加载失败」才抛异常。
+ */
+const predict_one = async (name: string, options: PredictOptions): Promise<BoomResult> => {
   const info = await files.get_mole_info(name)
   if (!info?.syms?.length) throw new Error(`读不到 ${name} 的结构`)
-  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const payload = {
-    token,
+  const rt = await ensure_engine()
+  return rt.predict({
+    token: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     name,
     syms: info.syms,
     xyzs: info.xyzs,
     bonds: info.bonds ?? null,
-    bond_mode: refs.value.bondMode,
-    index_mode: refs.value.indexMode,
-    targets: tgts,
-    derived: refs.value.derived,
+    bond_mode: options.bond_mode,
+    index_mode: options.index_mode,
+    targets: options.targets,
+    derived: options.derived,
+    perf_variant: options.perf_variant,
+  })
+}
+
+const current_options = (): PredictOptions => ({
+  targets: targets(),
+  bond_mode: refs.value.bondMode,
+  index_mode: refs.value.indexMode,
+  derived: refs.value.derived,
+  perf_variant: refs.value.perfVariant,
+})
+
+/** 面板当前设置为默认值，调用方传入的字段优先 */
+const merge_options = (o?: BoomPredictOptions): PredictOptions => {
+  const c = current_options()
+  return {
+    targets: o?.targets ?? c.targets,
+    bond_mode: o?.bond_mode ?? c.bond_mode,
+    index_mode: o?.index_mode ?? c.index_mode,
+    derived: o?.derived ?? c.derived,
+    perf_variant: o?.perf_variant ?? c.perf_variant,
   }
-  const [ok, out] = await cores.run_exe(
-    SOURCE, py_exe(fold), [infer_script(fold), '--out', result_file(fold)], JSON.stringify(payload),
-  )
-  if (out) refs.value.log = out
-  let text = ''
-  try {
-    text = await cores.read_text(result_file(fold))
-  } catch (err) {
-    throw new Error(`读不到结果文件（是否已准备内置 python：python tools/prepare_python.py）：${(err as Error).message}`)
-  }
-  let res: BoomResult
-  try {
-    res = JSON.parse(text) as BoomResult
-  } catch (err) {
-    throw new Error(`结果文件不是合法 JSON：${(err as Error).message}`)
-  }
-  if (res.token !== token) throw new Error('结果文件不是本次运行的输出（令牌不匹配）')
-  if (!ok && res.ok !== false) throw new Error('推理进程异常退出，详情见日志')
-  return res
 }
 
 const check_env = async () => {
   refs.value.checking = true
   refs.value.log = ''
-  cores.show_loading('boom 检查运行环境...')
+  cores.show_loading('boom 加载推理核...')
   try {
-    const fold = await plugin_fold()
-    const [ok, out] = await cores.run_exe(SOURCE, py_exe(fold), [infer_script(fold), '--check'], '')
-    refs.value.log = out || '（没有输出：内置 python 运行时可能还没准备好，请先运行 python tools/prepare_python.py）'
-    cores.notify(ok ? 'boom 运行环境正常' : 'boom 运行环境检查失败，请看日志', ok ? 'success' : 'error')
+    await ensure_engine()
+    cores.notify('boom 推理核就绪（Rust→wasm）', 'success')
   } catch (err) {
-    refs.value.log = `${(err as Error).message}`
-    cores.notify('boom 运行环境检查异常', 'error')
+    refs.value.engine = '加载失败'
+    refs.value.log = `${(err as Error).message}\n\n推理核与权重随插件包发布，若提示 404/缺失，请重新安装或检查安装包是否完整。`
+    cores.notify('boom 推理核加载失败，请看日志', 'error')
   } finally {
     refs.value.checking = false
     cores.hide_loading()
@@ -269,32 +313,37 @@ const run = async () => {
   }
   refs.value.busy = true
   refs.value.results = []
-  refs.value.log = ''
-  const fold = await plugin_fold()
   try {
+    // 先加载推理核：失败就在这里给出明确原因，不必等第一个分子
+    await ensure_engine()
     for (let k = 0; k < names.length; k++) {
       const name = names[k]!
       cores.show_loading(`boom 预测中 ${k + 1}/${names.length}：${name}`)
       try {
-        const res = await predict_one(name, fold, tgts)
+        const t0 = performance.now()
+        const res = await predict_one(name, current_options())
+        const ms = performance.now() - t0
         refs.value.results.push(res)
         if (res.ok) {
           const parts: string[] = []
           if (res.results.density != null) parts.push(`ρ=${res.results.density.toFixed(4)} g/cm³`)
           if (res.results.eof != null) parts.push(`ΔHf=${res.results.eof.toFixed(2)} kcal/mol`)
           if (res.derived) parts.push(`D=${res.derived.D.toFixed(3)} km/s`)
-          cores.add_reslog('boom', `${name} ${parts.join('  ')}`)
+          cores.add_reslog('boom', `${name} ${parts.join('  ')}  (${ms.toFixed(0)} ms)`)
         } else {
           cores.notify(`${name} 预测失败：${res.error}`, 'error')
         }
       } catch (err) {
         refs.value.results.push({
-          ok: false, name, formula: '', n_atoms: 0, n_heavy: 0, bond_mode: '',
+          ok: false, name, formula: '', n_atoms: 0, n_heavy: 0, bond_mode: '', n_bonds: 0,
           results: {}, derived: null, warnings: [], error: (err as Error).message,
         })
         cores.notify(`${name} 预测异常：${(err as Error).message}`, 'error')
       }
     }
+  } catch (err) {
+    cores.notify(`boom 推理核不可用：${(err as Error).message}`, 'error')
+    refs.value.log = `${(err as Error).message}`
   } finally {
     refs.value.busy = false
     cores.hide_loading()
@@ -303,20 +352,26 @@ const run = async () => {
 
 // 对外 API：脚本/其它插件可以 await window.wmapi_boom.predict('mol.xyz')
 window.wmapi_boom = {
-  predict: async (name, tgts) => {
+  predict: async (name, options) => {
     try {
-      const res = await predict_one(name, await plugin_fold(), tgts ?? ['density', 'eof'])
+      const res = await predict_one(name, merge_options(options))
       return [res.ok, JSON.stringify(res)] as [boolean, string]
     } catch (err) {
       return [false, (err as Error).message] as [boolean, string]
     }
   },
-  predict_result: async (name, tgts) => predict_one(name, await plugin_fold(), tgts ?? ['density', 'eof']),
+  predict_result: async (name, options) => predict_one(name, merge_options(options)),
+  load: async () => JSON.stringify((await ensure_engine()).info),
 } satisfies wmapi_boom
 
 onMounted(() => {
   refresh_current()
   files.on_select(() => refresh_current())
   files.on_option(() => refresh_current())
+  // 面板一打开就把推理核拉起来（30 MB，后台加载；失败只写日志不弹窗）
+  ensure_engine().catch((err: Error) => {
+    refs.value.engine = '未加载'
+    refs.value.log = `预加载失败（第一次预测时会自动重试）：${err.message}`
+  })
 })
 </script>

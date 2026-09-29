@@ -1,0 +1,24 @@
+[package]
+name = "boom-core"
+version = "0.1.0"
+edition = "2021"
+description = "wmview.boom 推理核：GRMP 前向 + 几何基组 + Q/D/p 估算（纯 Rust，可编 wasm）"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[[bin]]
+name = "boom-core"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

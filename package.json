@@ -1,14 +1,16 @@
 {
   "name": "wmview_boom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
+    "build": "run-s type-check build:wasm build-only",
+    "build:wasm": "node boom-core/build-wasm.mjs",
     "preview": "vite preview",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build"
+    "type-check": "vue-tsc --build",
+    "verify:wasm": "node boom-core/verify-wasm.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

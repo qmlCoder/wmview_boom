@@ -12,7 +12,8 @@ export const plugin: Plugin = {
   name: 'boom', // 侧边栏/日志里显示的名字
   sider: { name: 'boom', icon, comp: Sider },
   position: 'right',
-  device: ['windows'], // 依赖外部 python 运行时，仅 Windows
+  // 推理在本进程内的 Rust→wasm 里跑（不再依赖外部 python 运行时），Windows 与 Android 都能用
+  device: ['windows', 'android'],
   apidoc,
 }
 

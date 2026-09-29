@@ -12,13 +12,26 @@ dist-ssr
 *.suo
 *.swp
 
-# python
+# python（开发侧工具用；随包运行时已改为 Rust→wasm）
 __pycache__/
 *.pyc
 
-# 插件运行时产物（由 tools/prepare_python.py / 前端推理生成）
-python-3.10/
+# 开发期产物：numpy 参照实现（runtime/*.py 本身进版本库）的输出
 runtime/out/
+
+# Rust 推理核的构建产物（wasm-pack 出的 pkg/ 与 cargo 的 target/）
+boom-core/pkg/
+boom-core/target/
+boom-core/**/*.pdb
+
+# 大二进制不进版本库（与 wmvie.flavor / wmview.xtb 的约定一致）：
+#   .pt            原项目 checkpoint（30 MB，只作开发参考）
+#   runtime/weights/*.npz  checkpoint 转出的 numpy 权重（30 MB）
+#   boom-data/*.bin        npz 转出的扁平权重（30 MB，wasm 随包资源）
+# 克隆后要重新生成：tools/export_weights.py（需要 torch）→ tools/export_flat_weights.py
+模型/model_save/*.pt
+runtime/weights/*.npz
+boom-data/*.bin
 
 # 打包产物与重复归档
 *.zip

@@ -3,7 +3,7 @@
 golden.json 由 tools/verify_torch.py 生成（含分子结构、键图、RDKit 几何与 torch 输出）。
 
 用法：
-    python tools/check_golden.py        # 可用内置 python（只依赖 numpy）
+    python tools/check_golden.py        # 需要 numpy（开发侧 python）
 """
 
 from __future__ import annotations

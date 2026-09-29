@@ -3,6 +3,6 @@
   "desc": "含能材料性质预测：用 GRMP 图神经网络从分子结构预测密度与固体生成焓，并给出爆热/爆速/爆压的经验估算",
   "icon": "https://wmview.oss-cn-hangzhou.aliyuncs.com/plugins/boom/icon.png",
   "github": "",
-  "version": "0.1.0",
-  "platform": "windows"
+  "version": "0.2.0",
+  "platform": "windows,android"
 }

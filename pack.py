@@ -3,8 +3,13 @@
 产物: wmview.boom.zip（文件名不带版本号，版本号见包内 info.json）
 解压到主程序根目录 plugs/ 下（目录名 wmview.boom），重启 wmview 即可加载。
 
-包内容 = 前端 MF 产物 + 内置 python 运行时 + 推理运行时（代码 + 权重）。
-不含 模型/ 目录（原项目源码与 .pt 权重只在开发侧使用，运行期用 runtime/weights/*.npz）。
+包内容 = 前端 MF 产物（index.js + assets/）。assets/ 里已经包含推理所需的全部资源：
+Rust→wasm 推理核（约 280 KB）与两个模型的扁平权重（各 14.5 MB）。
+**不含** python 运行时（旧版内置的 python-3.10 已随 Rust 移植删除），
+也**不含** 模型/ 目录（原项目源码与 .pt 权重只在开发侧使用）。
+
+构建顺序：`npm run build`（type-check → wasm-pack 出 boom-core/pkg → vite 出 dist），
+然后再跑本脚本。cargo / wasm-pack 只在本机打包时需要，客户端不需要。
 
 用法: python pack.py
 """
@@ -16,7 +21,6 @@ from zipfile import ZIP_DEFLATED, ZipFile
 # 运行期不需要的东西不打包
 SKIP_DIRS = {'__pycache__'}
 SKIP_SUFFIX = ('.pyc',)
-SKIP_PARTS = {os.path.join('runtime', 'out')}
 
 
 def compress_specified_items(output_zip: str, items: list, compress_level: int = 6):
@@ -30,8 +34,6 @@ def compress_specified_items(output_zip: str, items: list, compress_level: int =
             elif os.path.isdir(item):
                 for root, dirs, files in os.walk(item):
                     dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-                    if any(part in os.path.normpath(root) for part in SKIP_PARTS):
-                        continue
                     for file in files:
                         if file.endswith(SKIP_SUFFIX):
                             continue
@@ -55,12 +57,10 @@ if _info.get("version") != VERSION:
 
 # ====================== 【只需修改这里】 ======================
 TO_COMPRESS = [
-    "dist/index.js",       # MF remote 入口
-    "dist/assets",         # 运行时 chunk + css
-    "info.json",           # 插件市场元数据（含版本号）
-    "src/icon.png",        # 插件图标 → zip 根目录 icon.png
-    "runtime",             # 推理运行时：boom_infer.py + 几何/网络 numpy 实现 + weights/
-    "python-3.10",         # 内置 python（含 numpy），由 tools/prepare_python.py 准备
+    "dist/index.js",   # MF remote 入口
+    "dist/assets",     # 运行时 chunk + css + wasm + 扁平权重（inference core）
+    "info.json",       # 插件市场元数据（含版本号）
+    "src/icon.png",    # 插件图标 → zip 根目录 icon.png
 ]
 
 OUTPUT = "wmview.boom.zip"

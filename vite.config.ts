@@ -29,6 +29,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // 插件产物被宿主放到 plugs/wmview.boom/ 下加载（asset.localhost），必须是相对 base：
+  // 推理核 wasm 与 29 MB 权重是 `?url` 外部资源，绝对路径 /assets/... 会解析到主机根目录而 404。
+  base: './',
   server: {
     // 主程序开发模式固定连 http://localhost:3001/index.js
     port: 3001,
@@ -39,8 +42,8 @@ export default defineConfig({
   },
   build: {
     minify: false,
-    // 图标等小资源内联成 data URL：插件是从宿主 plugs 目录加载的，
-    // 外链 assets 路径在宿主里取不到（主程序把 icon 原样显示）
+    // 小资源（图标 20 KB）内联成 data URL：宿主直接拿 icon 字段显示，外链取不到；
+    // 权重（14.5 MB × 2）远大于阈值，仍按 assets 文件发布、运行时 fetch。
     assetsInlineLimit: 200000,
   },
 })
